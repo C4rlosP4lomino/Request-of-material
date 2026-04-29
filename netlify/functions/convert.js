@@ -1,27 +1,16 @@
 const https = require('https');
-const http = require('http');
 
 const PUBLIC_KEY = process.env.ILOVEPDF_PUBLIC_KEY;
-const SECRET_KEY = process.env.ILOVEPDF_SECRET_KEY;
+const SECRET_KEY = process.env.ILOVEPDF_PRIVATE_KEY;
 
-// Helper: make HTTP/HTTPS request
-function request(options, body) {
+function httpsRequest(options, body) {
   return new Promise((resolve, reject) => {
-    const protocol = options.protocol === 'http:' ? http : https;
-    const req = protocol.request(options, (res) => {
+    const req = https.request(options, (res) => {
       const chunks = [];
       res.on('data', chunk => chunks.push(chunk));
       res.on('end', () => {
         const buffer = Buffer.concat(chunks);
-        if (options.binary) {
-          resolve({ statusCode: res.statusCode, body: buffer, headers: res.headers });
-        } else {
-          try {
-            resolve({ statusCode: res.statusCode, body: JSON.parse(buffer.toString()), headers: res.headers });
-          } catch {
-            resolve({ statusCode: res.statusCode, body: buffer.toString(), headers: res.headers });
-          }
-        }
+        resolve({ statusCode: res.statusCode, headers: res.headers, buffer, text: buffer.toString('utf8') });
       });
     });
     req.on('error', reject);
@@ -30,170 +19,114 @@ function request(options, body) {
   });
 }
 
-// Helper: multipart form data
-function buildMultipart(boundary, fields, fileBuffer, fileName) {
-  const parts = [];
-  for (const [key, value] of Object.entries(fields)) {
-    parts.push(
-      `--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${value}\r\n`
-    );
-  }
-  parts.push(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${fileName}"\r\nContent-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document\r\n\r\n`
-  );
-  const header = Buffer.from(parts.join(''));
-  const footer = Buffer.from(`\r\n--${boundary}--\r\n`);
-  return Buffer.concat([header, fileBuffer, footer]);
-}
-
 exports.handler = async (event) => {
-  // CORS headers
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS'
   };
 
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers: corsHeaders, body: '' };
-  }
-
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers: corsHeaders, body: 'Method not allowed' };
-  }
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: corsHeaders, body: '' };
+  if (event.httpMethod !== 'POST') return { statusCode: 405, headers: corsHeaders, body: 'Method not allowed' };
 
   try {
-    // Parse incoming file (base64 encoded)
-    const body = JSON.parse(event.body);
-    const fileBase64 = body.file; // base64 string
-    const fileName = body.fileName || 'documento.docx';
-    const fileBuffer = Buffer.from(fileBase64, 'base64');
+    console.log('PUBLIC_KEY exists:', !!PUBLIC_KEY);
+    console.log('SECRET_KEY exists:', !!SECRET_KEY);
 
-    // ── STEP 1: Authenticate ──
-    const authBody = JSON.stringify({ public_key: PUBLIC_KEY });
-    const authRes = await request({
+    const body = JSON.parse(event.body);
+    const fileBuffer = Buffer.from(body.file, 'base64');
+    const fileName = body.fileName || 'documento.docx';
+    console.log('File size:', fileBuffer.length, 'Name:', fileName);
+
+    // ── STEP 1: Auth ──
+    const authPayload = JSON.stringify({ public_key: PUBLIC_KEY });
+    const authRes = await httpsRequest({
       hostname: 'api.ilovepdf.com',
       path: '/v1/auth',
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(authBody)
-      }
-    }, authBody);
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(authPayload) }
+    }, authPayload);
 
-    if (authRes.statusCode !== 200) {
-      return {
-        statusCode: 500,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: 'Auth failed', details: authRes.body })
-      };
-    }
-    const token = authRes.body.token;
+    console.log('Auth status:', authRes.statusCode, authRes.text.substring(0, 300));
+    if (authRes.statusCode !== 200) return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: 'Auth failed', detail: authRes.text }) };
 
-    // ── STEP 2: Start task (officepdf = Word to PDF) ──
-    const startRes = await request({
+    const { token } = JSON.parse(authRes.text);
+
+    // ── STEP 2: Start task ──
+    const startRes = await httpsRequest({
       hostname: 'api.ilovepdf.com',
       path: '/v1/start/officepdf',
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
-    if (startRes.statusCode !== 200) {
-      return {
-        statusCode: 500,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: 'Start task failed', details: startRes.body })
-      };
-    }
+    console.log('Start status:', startRes.statusCode, startRes.text.substring(0, 300));
+    if (startRes.statusCode !== 200) return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: 'Start failed', detail: startRes.text }) };
 
-    const { server, task } = startRes.body;
+    const { server, task } = JSON.parse(startRes.text);
+    console.log('Server:', server, 'Task:', task);
 
-    // ── STEP 3: Upload file ──
+    // ── STEP 3: Upload ──
     const boundary = `----FormBoundary${Date.now()}`;
-    const formData = buildMultipart(boundary, { task }, fileBuffer, fileName);
+    const CRLF = '\r\n';
+    const header = Buffer.from(
+      `--${boundary}${CRLF}Content-Disposition: form-data; name="task"${CRLF}${CRLF}${task}${CRLF}` +
+      `--${boundary}${CRLF}Content-Disposition: form-data; name="file"; filename="${fileName}"${CRLF}Content-Type: application/octet-stream${CRLF}${CRLF}`
+    );
+    const footer = Buffer.from(`${CRLF}--${boundary}--${CRLF}`);
+    const multipart = Buffer.concat([header, fileBuffer, footer]);
 
-    const uploadRes = await request({
+    const uploadRes = await httpsRequest({
       hostname: server,
       path: '/v1/upload',
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        'Content-Length': formData.length
+        'Content-Length': multipart.length
       }
-    }, formData);
+    }, multipart);
 
-    if (uploadRes.statusCode !== 200) {
-      return {
-        statusCode: 500,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: 'Upload failed', details: uploadRes.body })
-      };
-    }
+    console.log('Upload status:', uploadRes.statusCode, uploadRes.text.substring(0, 300));
+    if (uploadRes.statusCode !== 200) return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: 'Upload failed', detail: uploadRes.text }) };
 
-    const serverFilename = uploadRes.body.server_filename;
+    const { server_filename } = JSON.parse(uploadRes.text);
 
     // ── STEP 4: Process ──
-    const processBody = JSON.stringify({
-      task,
-      tool: 'officepdf',
-      files: [{ server_filename: serverFilename, filename: fileName }]
+    const processPayload = JSON.stringify({
+      task, tool: 'officepdf',
+      files: [{ server_filename, filename: fileName }]
     });
 
-    const processRes = await request({
+    const processRes = await httpsRequest({
       hostname: server,
       path: '/v1/process',
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(processBody)
-      }
-    }, processBody);
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(processPayload) }
+    }, processPayload);
 
-    if (processRes.statusCode !== 200) {
-      return {
-        statusCode: 500,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: 'Process failed', details: processRes.body })
-      };
-    }
+    console.log('Process status:', processRes.statusCode, processRes.text.substring(0, 300));
+    if (processRes.statusCode !== 200) return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: 'Process failed', detail: processRes.text }) };
 
-    // ── STEP 5: Download PDF ──
-    const downloadRes = await request({
+    // ── STEP 5: Download ──
+    const downloadRes = await httpsRequest({
       hostname: server,
       path: `/v1/download/${task}`,
       method: 'GET',
-      headers: { 'Authorization': `Bearer ${token}` },
-      binary: true
+      headers: { 'Authorization': `Bearer ${token}` }
     });
 
-    if (downloadRes.statusCode !== 200) {
-      return {
-        statusCode: 500,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: 'Download failed' })
-      };
-    }
+    console.log('Download status:', downloadRes.statusCode, 'Size:', downloadRes.buffer.length);
+    if (downloadRes.statusCode !== 200) return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: 'Download failed', detail: downloadRes.text }) };
 
-    // Return PDF as base64
     return {
       statusCode: 200,
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        pdf: downloadRes.body.toString('base64'),
-        fileName: fileName.replace(/\.docx?$/i, '.pdf')
-      })
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pdf: downloadRes.buffer.toString('base64'), fileName: fileName.replace(/\.docx?$/i, '.pdf') })
     };
 
   } catch (err) {
-    return {
-      statusCode: 500,
-      headers: corsHeaders,
-      body: JSON.stringify({ error: err.message })
-    };
+    console.error('Error:', err.message, err.stack);
+    return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: err.message }) };
   }
 };
