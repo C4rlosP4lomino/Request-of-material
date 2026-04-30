@@ -641,8 +641,13 @@ function downloadExcel() {
   const routes = lastRoutes;
   const wb = XLSX.utils.book_new();
 
+  const typeLabel = type === 'CONSOLIDATION' ? 'CONSOLIDATION PLAN'
+    : type === 'AGREEMENT' ? 'AGREEMENT'
+    : type === 'NOTIFICATION' ? 'NOTIFICATION'
+    : type;
+
   const routeHeader = routes.length
-    ? `CONSOLIDATION PLAN CHECKLIST - ROUTE ${routes.join(' | ')}`
+    ? `${typeLabel} CHECKLIST - ROUTE ${routes.join(' | ')}`
     : `CHECKLIST DE MATERIALES — ${type}`;
 
   const TNR = 'Times New Roman';
