@@ -754,25 +754,27 @@ function downloadExcel() {
   wsData.push(emptyRow()); rowHeights.push({hpt:8});
 
   if (driveLink) {
+    const driveLinkRow = wsData.length;
     wsData.push([
-      c('', S.empty), c('', S.empty),
       c(driveLink, {
         font: { sz:10, color:{ rgb:'FF1155CC' }, underline:true, name:'Times New Roman' },
         alignment: { vertical:'center', wrapText:true }
       }),
-      c('', S.empty), c('', S.empty), c('', S.empty)
+      c('',S.empty), c('',S.empty), c('',S.empty), c('',S.empty), c('',S.empty)
     ]);
+    merges.push({ s:{r:driveLinkRow,c:0}, e:{r:driveLinkRow,c:5} });
     rowHeights.push({hpt:18});
   }
 
+  const noteRow = wsData.length;
   wsData.push([
-    c('', S.empty), c('', S.empty),
     c(NOTE_TEXT, {
       font: { sz:9, italic:true, color:{ rgb:'FF555555' }, name:'Times New Roman' },
       alignment: { vertical:'center', wrapText:true }
     }),
-    c('', S.empty), c('', S.empty), c('', S.empty)
+    c('',S.empty), c('',S.empty), c('',S.empty), c('',S.empty), c('',S.empty)
   ]);
+  merges.push({ s:{r:noteRow,c:0}, e:{r:noteRow,c:5} });
   rowHeights.push({hpt:30});
 
   // 2 empty rows + page break
