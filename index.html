@@ -123,10 +123,10 @@
     <div class="tab-panel active" id="tab-docx">
       <label>Selecciona o arrastra el archivo del comando (.docx)</label>
       <div class="upload-zone" id="upload-zone">
-        <input type="file" id="word-file" accept=".doc,.docx" onchange="handleFileUpload(this)">
+        <input type="file" id="word-file" accept=".docx" onchange="handleFileUpload(this)">
         <div class="upload-icon">📄</div>
         <div class="upload-text">Haz clic o arrastra el archivo aquí</div>
-        <div class="upload-sub">Archivos .doc y .docx</div>
+        <div class="upload-sub">Solo archivos .docx</div>
       </div>
       <div class="upload-result" id="upload-result"></div>
       <p class="hint">Para archivos .doc: usa la pestaña "Pegar texto" a la izquierda.</p>
@@ -326,46 +326,27 @@ function handleFileUpload(input) {
     originalFileBuffer = e.target.result;
 
     if (file.name.endsWith('.docx')) {
-      // Extract text directly with mammoth
       mammoth.extractRawText({ arrayBuffer: originalFileBuffer })
         .then(r => {
           extractedText = r.value;
-          showUploadResult(el, true, `✓ Archivo .docx cargado: ${file.name} (${extractedText.length} caracteres leídos)`);
+          showUploadResult(el, true, `✓ Archivo cargado: ${file.name} (${extractedText.length} caracteres leídos)`);
         })
         .catch(() => showUploadResult(el, false, '⚠ Error al leer el archivo.'));
     } else {
-      // .doc file — convert to docx first via CloudConvert, then extract text
-      showUploadResult(el, true, `✓ Archivo .doc cargado: ${file.name} — convirtiendo a .docx para extraer materiales...`);
-      convertDocToDocx().then(result => {
-        if (!result) {
-          showUploadResult(el, false, '⚠ Error al convertir .doc a .docx. Usa la pestaña "Pegar texto" como alternativa.');
-          return;
-        }
-        // Decode base64 to ArrayBuffer and extract text
-        const binary = atob(result.base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        mammoth.extractRawText({ arrayBuffer: bytes.buffer })
-          .then(r => {
-            extractedText = r.value;
-            showUploadResult(el, true, `✓ Archivo .doc convertido y leído: ${file.name} (${extractedText.length} caracteres)`);
-          })
-          .catch(() => showUploadResult(el, false, '⚠ Error al extraer texto del .docx convertido.'));
-      });
+      showUploadResult(el, true, `✓ Archivo .doc cargado: ${file.name} — usa la pestaña "Pegar texto" para extraer materiales. El archivo se convertirá a PDF al generar.`);
     }
   };
   reader.readAsArrayBuffer(file);
 }
 
-// Convert file via CloudConvert Netlify Function
-async function convertFile(targetFormat) {
+// Convert Word to PDF via Netlify Function
+async function convertWordToPDF() {
   if (!originalFileBuffer) return null;
 
   const statusEl = document.getElementById('convert-status');
-  if (statusEl) statusEl.textContent = `⏳ Convirtiendo a ${targetFormat.toUpperCase()}...`;
+  if (statusEl) statusEl.textContent = '⏳ Convirtiendo Word a PDF...';
 
   try {
-    // Convert ArrayBuffer to base64 safely for large files
     const uint8 = new Uint8Array(originalFileBuffer);
     let binary = '';
     const chunkSize = 8192;
@@ -377,7 +358,7 @@ async function convertFile(targetFormat) {
     const response = await fetch('/.netlify/functions/convert', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file: base64, fileName: originalFileName, targetFormat })
+      body: JSON.stringify({ file: base64, fileName: originalFileName })
     });
 
     if (!response.ok) {
@@ -386,24 +367,14 @@ async function convertFile(targetFormat) {
     }
 
     const data = await response.json();
-    if (statusEl) statusEl.textContent = `✓ Conversión a ${targetFormat.toUpperCase()} completada`;
-    return { base64: data.file, fileName: data.fileName };
+    if (statusEl) statusEl.textContent = '✓ PDF generado correctamente';
+    return { base64: data.pdf, fileName: data.fileName };
 
   } catch (err) {
     console.error('Conversion error:', err);
     if (statusEl) statusEl.textContent = `⚠ Error: ${err.message}`;
     return null;
   }
-}
-
-// Convert Word to PDF
-async function convertWordToPDF() {
-  return await convertFile('pdf');
-}
-
-// Convert doc to docx then extract text
-async function convertDocToDocx() {
-  return await convertFile('docx');
 }
 
 function showUploadResult(el, ok, msg) {
