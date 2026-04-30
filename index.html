@@ -172,6 +172,12 @@
     </div>
 
     <div style="margin-top:16px;">
+      <label>Link de Drive (KMZ y fotos)</label>
+      <input type="text" id="drive-link" placeholder="Ej: https://drive.google.com/drive/folders/...">
+      <p class="hint" style="margin-top:-8px;">Si no tienes el link aún, déjalo vacío. La nota de pie aparecerá igual.</p>
+    </div>
+
+    <div style="margin-top:16px;">
       <label>Nivel de urgencia (Proposal Note)</label>
       <div style="display:flex;gap:20px;margin-top:8px;align-items:center;">
         <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer;">
@@ -741,6 +747,34 @@ function downloadExcel() {
 
   // Total row removed
 
+  // Drive link row
+  const driveLink = document.getElementById('drive-link')?.value.trim() || '';
+  const NOTE_TEXT = 'The KMZ file and photos are attached via a link because the VOffice platform does not support these types of documents.';
+
+  wsData.push(emptyRow()); rowHeights.push({hpt:8});
+
+  if (driveLink) {
+    wsData.push([
+      c('', S.empty), c('', S.empty),
+      c(driveLink, {
+        font: { sz:10, color:{ rgb:'FF1155CC' }, underline:true, name:'Times New Roman' },
+        alignment: { vertical:'center', wrapText:true }
+      }),
+      c('', S.empty), c('', S.empty), c('', S.empty)
+    ]);
+    rowHeights.push({hpt:18});
+  }
+
+  wsData.push([
+    c('', S.empty), c('', S.empty),
+    c(NOTE_TEXT, {
+      font: { sz:9, italic:true, color:{ rgb:'FF555555' }, name:'Times New Roman' },
+      alignment: { vertical:'center', wrapText:true }
+    }),
+    c('', S.empty), c('', S.empty), c('', S.empty)
+  ]);
+  rowHeights.push({hpt:30});
+
   // 2 empty rows + page break
   wsData.push(emptyRow()); rowHeights.push({hpt:8});
   wsData.push(emptyRow()); rowHeights.push({hpt:8});
@@ -796,6 +830,7 @@ function resetForm() {
   document.getElementById('agreement-name').value='';
   document.getElementById('doc-code').value='';
   document.getElementById('routes-raw').value='';
+  document.getElementById('drive-link').value='';
   document.getElementById('routes-tags').innerHTML='';
   document.getElementById('routes-count').textContent='';
   document.querySelectorAll('.extra-field').forEach(el=>el.classList.remove('visible'));
