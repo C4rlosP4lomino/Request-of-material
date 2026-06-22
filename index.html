@@ -79,6 +79,7 @@
   .badge-consolidation{background:#d4edda;color:#155724;}
   .badge-notification{background:#fff3cd;color:var(--warn);}
   .badge-agreement{background:#d1ecf1;color:#0c5460;}
+  .badge-badroute{background:#f8d7da;color:#721c24;}
   .alert{padding:10px 14px;border-radius:3px;font-size:12px;margin-top:10px;}
   .alert-warn{background:#fff3cd;border:1px solid #ffc107;color:#856404;}
   .alert-error{background:#f8d7da;border:1px solid #f5c6cb;color:#721c24;}
@@ -151,6 +152,7 @@
           <option value="consolidation">CONSOLIDATION PLAN</option>
           <option value="agreement">AGREEMENT</option>
           <option value="notification">NOTIFICATION</option>
+          <option value="badroute">BAD ROUTE</option>
         </select>
       </div>
       <div class="form-group">
@@ -193,6 +195,11 @@
         <input type="number" id="extra-pages" min="0" max="20" value="0" style="width:140px;">
         <p class="hint" style="margin-top:6px;">Cantidad de páginas extra de KMZ + PHOTOGRAPH REPORT a generar. Útil cuando las rutas a implementar no tienen el formato estándar y no se reconocen automáticamente.</p>
       </div>
+    </div>
+    <div id="extra-badroute" class="extra-field">
+      <label>Iniciales del departamento</label>
+      <input type="text" id="br-dept-initials" placeholder="Ej: AYA, CUS, LAL" maxlength="10">
+      <p class="hint" style="margin-top:6px;">Sucursal donde se rehabilitarán las rutas en mal estado.</p>
     </div>
 
     <div style="margin-top:16px;">
@@ -431,6 +438,7 @@ function updateExtraField() {
   if(t==='consolidation') document.getElementById('extra-consolidation').classList.add('visible');
   if(t==='agreement')     document.getElementById('extra-agreement').classList.add('visible');
   if(t==='notification')  document.getElementById('extra-notification').classList.add('visible');
+  if(t==='badroute')      document.getElementById('extra-badroute').classList.add('visible');
 }
 
 function updateNotifRef() {
@@ -463,6 +471,10 @@ function buildNote(type) {
     }
     const code = document.getElementById('doc-code').value.trim() || '___';
     return `With reference to document ${code}, materials are requested to resolve the issue.`;
+  }
+  if(type==='badroute'){
+    const dept=document.getElementById('br-dept-initials').value.trim().toUpperCase()||'___';
+    return `Materials are requested for the rehabilitation of BAD ROUTE in ${dept} branch.`;
   }
   return '';
 }
@@ -600,7 +612,8 @@ function renderPreview(rows, notFound, cmdNumber, type, routes) {
   const badges = {
     consolidation:'<span class="badge badge-consolidation">CONSOLIDATION</span>',
     agreement:'<span class="badge badge-agreement">AGREEMENT</span>',
-    notification:'<span class="badge badge-notification">NOTIFICATION</span>'
+    notification:'<span class="badge badge-notification">NOTIFICATION</span>',
+    badroute:'<span class="badge badge-badroute">BAD ROUTE</span>'
   };
 
   const extraPagesMeta = getExtraPages();
@@ -667,6 +680,7 @@ function downloadExcel() {
   const typeLabel = type === 'CONSOLIDATION' ? 'CONSOLIDATION PLAN'
     : type === 'AGREEMENT' ? 'AGREEMENT'
     : type === 'NOTIFICATION' ? 'NOTIFICATION'
+    : type === 'BADROUTE' ? 'BAD ROUTE PLAN'
     : type;
 
   const routeHeader = routes.length
@@ -908,6 +922,7 @@ function resetForm() {
   document.getElementById('agreement-name').value='';
   document.getElementById('doc-code').value='';
   document.getElementById('doc-description').value='';
+  document.getElementById('br-dept-initials').value='';
   document.getElementById('extra-pages').value='0';
   document.getElementById('notif-ref-oficio').checked=true;
   document.getElementById('notif-oficio-field').style.display='block';
@@ -1181,6 +1196,10 @@ function getProposalData() {
       const doc = document.getElementById('doc-code')?.value.trim() || '___';
       contentText = `Transmission Dept. would like request to BoD approve the delivery of material with reference to document ${doc} - ${routes}`;
     }
+  } else if (type === 'badroute') {
+    dept = document.getElementById('br-dept-initials')?.value.trim().toUpperCase() || '___';
+    contentText = `Transmission Dept. would like request to BoD approve the delivery of material to Branch ${dept} for the rehabilitation of BAD ROUTE ${routes}`;
+    titleText = `TRA_Material Request of Material for BAD ROUTE PLAN ${routes}`;
   }
 
   return { type, cmdNumber, routes, persona, dateStr, contentText, titleText, isUrgent };
@@ -1366,7 +1385,8 @@ async function downloadPdfWithAnnotations() {
       txt(d.titleText.substring(0, 90), 140, height-205, 9);
       txt(d.titleText.length > 90 ? d.titleText.substring(90, 175) : '', 55, height-218, 8);
     } else {
-      const titleText = `TRA_Material Request of Material for ${d.type.toUpperCase()} PLAN`;
+      const typeLabelPdf = d.type === 'badroute' ? 'BAD ROUTE' : d.type.toUpperCase();
+      const titleText = `TRA_Material Request of Material for ${typeLabelPdf} PLAN`;
       txt(titleText, 140, height-205, 9);
       txt(d.routes.substring(0,80), 55, height-218, 8);
     }
